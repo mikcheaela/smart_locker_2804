@@ -1,4 +1,3 @@
-// Keypad initialization
 #include "functions.h"
 
 void setup() {
@@ -7,6 +6,7 @@ void setup() {
 
   if (checkPassword()){
     loadPassword();
+    servoMoveTo(SERVO_LOCKED_ANGLE);
     state = LOCKED;
     Serial.println("\nLOCKED.\nEnter PIN:");
   } else {
@@ -16,8 +16,11 @@ void setup() {
 }
 
 void loop() {
+  servoUpdate();
+  if (servoBusy()) { return; }
+
   char k = getKey();
-  if (k == 0) { delay(5); return; }
+  if (k == 0) { return; }
 
   if (state == SETUP) {
     if (k == '*') {
@@ -30,6 +33,7 @@ void loop() {
         strcpy(PASSWORD, entry);
         savePassword(PASSWORD);
         state = LOCKED;
+        servoMoveTo(SERVO_LOCKED_ANGLE);
         Serial.println("\nPIN saved!\nLOCKED.\nEnter PIN:");
         resetEntry();
       }
@@ -50,6 +54,7 @@ void loop() {
         // do nothing
       } else if (codeMatches()) {
         state = UNLOCKED;
+        servoMoveTo(SERVO_UNLOCKED_ANGLE);
         Serial.println("\nUNLOCKED");
         resetEntry();
       } else {
@@ -66,10 +71,9 @@ void loop() {
   } else { // UNLOCKED
     if (k == '#') {
       state = LOCKED;
+      servoMoveTo(SERVO_LOCKED_ANGLE);
       resetEntry();
       Serial.println("\nLOCKED.\nEnter PIN:");
     }
   }
-
-  delay(5);
 }

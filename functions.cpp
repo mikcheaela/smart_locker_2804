@@ -111,10 +111,10 @@ bool checkPassword() {
 }
 
 void savePassword(char* newPassword) {
-  writeByte(FLAG_ADDR, FLAG);
   for (int i = 0; i < PW_LEN; ++i) {
     writeByte(PW_START_ADDR + i, (uint8_t)newPassword[i]);
   }
+  writeByte(FLAG_ADDR, FLAG);
 }
 
 void loadPassword() {
@@ -122,4 +122,65 @@ void loadPassword() {
     PASSWORD[i] = (char)readByte(PW_START_ADDR + i);
   }
   PASSWORD[PW_LEN] = '\0';
+}
+
+// SERVO
+
+static const int SERVO_PIN = 9;
+
+static const unsigned long PERIOD_US = 20000;
+static const unsigned long PULSE_MIN_US = 500;
+static const unsigned long PULSE_MAX_US = 2500;
+static const unsigned long MOVE_TIME_MS = 700;
+
+static unsigned long pulseWidth = 1500;
+static bool servoEnabled = false;
+static unsigned long startTime = 0;
+static unsigned long moveStart_ms = 0;
+
+static void setAngle(int angle) {
+  angle = constrain(angle, 0, 180);
+  pulseWidth = map(angle, 0, 180, PULSE_MIN_US, PULSE_MAX_US);
+}
+
+static void servoON() {
+  servoEnabled = true;
+  pinMode(SERVO_PIN, OUTPUT);
+  startTime = micros();
+}
+
+static void servoOFF() {
+  servoEnabled = false;
+  digitalWrite(SERVO_PIN, LOW);
+}
+
+void servoMoveTo(int angle) {
+  setAngle(angle);
+  servoON();
+  moveStart_ms = millis();
+}
+
+bool servoBusy() {
+  return servoEnabled;
+}
+
+void servoUpdate() {
+  if (!servoEnabled) return;
+
+  if (millis() - moveStart_ms >= MOVE_TIME_MS) {
+    servoOFF();
+    return;
+  }
+
+  unsigned long elapsedTime = micros() - startTime;
+
+  if (elapsedTime >= pulseWidth) {
+    digitalWrite(SERVO_PIN, LOW);
+  } else {
+    digitalWrite(SERVO_PIN, HIGH);
+  }
+
+  if (elapsedTime >= PERIOD_US) {
+    startTime += PERIOD_US;
+  }
 }
