@@ -131,7 +131,7 @@ static const int SERVO_PIN = 9;
 static const unsigned long PERIOD_US = 20000;
 static const unsigned long PULSE_MIN_US = 500;
 static const unsigned long PULSE_MAX_US = 2500;
-static const unsigned long MOVE_TIME_MS = 700;
+static const unsigned long MOVE_TIME_MS = 500;
 
 static unsigned long pulseWidth = 1500;
 static bool servoEnabled = false;
