@@ -187,6 +187,12 @@ void servoUpdate() {
 
 // SLEEP
 
+#define ROW_MASK (1 << 4)
+#define ADCSRA_MASK (1 << 7)
+#define PCICR_MASK (1 << 2)
+#define PCIFR_MASK (1 << 2)
+#define GlobalInterrupt_MASK = (1 << 7) // SREG global interrupt enable
+
 static volatile uint8_t* const SREG_addr = (volatile uint8_t*)0x5F;
 static volatile uint8_t* const SMCR_addr = (volatile uint8_t*)0x53;
 static volatile uint8_t* const ADCSRA_addr = (volatile uint8_t*)0x7A;
@@ -194,19 +200,14 @@ static volatile uint8_t* const PCICR_addr = (volatile uint8_t*)0x68;
 static volatile uint8_t* const PCMSK2_addr = (volatile uint8_t*)0x6D;
 static volatile uint8_t* const PCIFR_addr = (volatile uint8_t*)0x3B;
 static volatile uint8_t* const PIND_addr = (volatile uint8_t*)0x29;
-static volatile uint8_t* const DDRD_addr = (volatile uint8_t*)0x2A;
-static volatile uint8_t* const PORTD_addr = (volatile uint8_t*)0x2B;
-
-static const uint8_t ROW_BIT = 4;   // PD4 = Arduino D4, the row/ground bus
 
 static void rowsAsGround() {
-  *PORTD_addr &= ~(1 << ROW_BIT); 
-  *DDRD_addr |= (1 << ROW_BIT); 
+  digitalWrite(4,LOW);
+  pinMode(4,OUTPUT);
 }
 
 static void rowsAsWake() { 
-  *PORTD_addr &= ~(1 << ROW_BIT); 
-  *DDRD_addr &= ~(1 << ROW_BIT); 
+  pinMode(4,INPUT); 
 }
 
 void initSleep() {
@@ -219,15 +220,15 @@ void enterSleep() {
 
   for (volatile int i = 0; i < 50; i++) {}
 
-  *ADCSRA_addr &= ~(1 << 7); 
-  *PCMSK2_addr |= (1 << 4);
-  *PCICR_addr |= (1 << 2);
-  *PCIFR_addr = (1 << 2);
+  *ADCSRA_addr &= ~ADCSRA_MASK; 
+  *PCMSK2_addr |= ROW_MASK;
+  *PCICR_addr |= PCICR_MASK;
+  *PCIFR_addr = PCIFR_MASK;
 
   uint8_t savedSREG = *SREG_addr;
-  *SREG_addr &= ~(1 << 7);
+  *SREG_addr &= ~GlobalInterrupt_MASK;
 
-  if (!(*PIND_addr & (1 << ROW_BIT))) {
+  if (!(*PIND_addr & ROW)) {
     *SMCR_addr = 0x04 | 0x01;
 
     uint8_t t;
@@ -243,9 +244,9 @@ void enterSleep() {
     *SMCR_addr &= ~0x01;
   }
 
-  *PCMSK2_addr &= ~(1 << 4); // mask again
-  *PCIFR_addr = (1 << 2); // clear the wake flag
+  *PCMSK2_addr &= ~ROW_MASK; // mask again
+  *PCIFR_addr = PCIFR_MASK; // clear the wake flag
   *SREG_addr = savedSREG; // restore interrupts so millis() works again
   rowsAsGround(); // ladder works again for A0
-  *ADCSRA_addr |= (1 << 7); // ADC on
+  *ADCSRA_addr |= ADCSRA_MASK; // ADC on
 }
