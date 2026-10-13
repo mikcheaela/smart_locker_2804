@@ -1,7 +1,11 @@
 #include "functions.h"
 
+static unsigned long lastActivity = 0;
+static const unsigned long SLEEP_TIMEOUT_MS = 5000;
+
 void setup() {
   Serial.begin(9600);
+  initSleep();
   resetEntry();
 
   if (checkPassword()){
@@ -13,14 +17,29 @@ void setup() {
     state = SETUP;
     Serial.println("\nNo PIN saved.\nEnter a 4-digit PIN.\nPress * to clear input and # to confirm.\n");
   }
+
+  lastActivity = millis();
 }
 
 void loop() {
   servoUpdate();
-  if (servoBusy()) { return; }
+  if (servoBusy()){
+    lastActivity = millis();
+    return;
+  }
 
   char k = getKey();
-  if (k == 0) { return; }
+  if (k == 0) {
+    if (state != SETUP && (millis() - lastActivity) >= SLEEP_TIMEOUT_MS){
+      resetEntry();
+      Serial.println("\nSleeping");
+      enterSleep();
+      Serial.println("\nAwake");
+      lastActivity = millis();
+    }
+    return;
+  }
+  lastActivity = millis();
 
   switch (state) {
 

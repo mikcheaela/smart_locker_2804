@@ -28,3 +28,7 @@ const int SERVO_UNLOCKED_ANGLE = 90;
 void servoMoveTo(int angle);
 void servoUpdate();
 bool servoBusy();
+
+// SLEEP
+void initSleep();
+void enterSleep();
