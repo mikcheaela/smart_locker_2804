@@ -191,7 +191,7 @@ void servoUpdate() {
 #define ADCSRA_MASK (1 << 7)
 #define PCICR_MASK (1 << 2)
 #define PCIFR_MASK (1 << 2)
-#define GlobalInterrupt_MASK = (1 << 7) // SREG global interrupt enable
+#define GlobalInterrupt_MASK (1 << 7)
 
 static volatile uint8_t* const SREG_addr = (volatile uint8_t*)0x5F;
 static volatile uint8_t* const SMCR_addr = (volatile uint8_t*)0x53;
