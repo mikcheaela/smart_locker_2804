@@ -1,6 +1,8 @@
 #include "functions.h"
 
-// KEYPAD
+// ==========================================
+// KEYPAD IMPLEMENTATION
+// ==========================================
 
 struct Key {
   int value;
@@ -28,7 +30,10 @@ static char decodeKey(int reading) {
   int  bestDist = 2000;
   for (int i = 0; i < NUM_KEYS; i++) {
     int dist = abs(reading - keys[i].value);
-    if (dist < bestDist) { bestDist = dist; best = keys[i].label; }
+    if (dist < bestDist) { 
+      bestDist = dist; 
+      best = keys[i].label; 
+    }
   }
   return best;
 }
@@ -39,7 +44,7 @@ static int readAveraged() {
   return sum / 8;
 }
 
-char getKey() {   // public
+char getKey() {
   char now = decodeKey(readAveraged());
   if (now == candidate) {
     if (sameCount < CONFIRM) sameCount++;
@@ -54,7 +59,9 @@ char getKey() {   // public
   return stableKey;
 }
 
-// STATE MACHINE
+// ==========================================
+// STATE MACHINE DATA & HELPERS
+// ==========================================
 
 char  PASSWORD[PW_LEN + 1];
 char  entry[PW_LEN + 1];
@@ -74,14 +81,16 @@ bool codeMatches() {
   return true;
 }
 
-// PIN
+// ==========================================
+// DIRECT EEPROM REGISTER FUNCTIONS
+// ==========================================
 
 #define ReadEnable (1 << 0)
 #define WriteEnable (1 << 1)
 #define MasterWriteEnable (1 << 2)
 
-static volatile uint8_t* const EECR_addr = (volatile uint8_t*)0x3F;
-static volatile uint8_t* const EEDR_addr = (volatile uint8_t*)0x40;
+static volatile uint8_t* const EECR_addr  = (volatile uint8_t*)0x3F;
+static volatile uint8_t* const EEDR_addr  = (volatile uint8_t*)0x40;
 static volatile uint8_t* const EEARL_addr = (volatile uint8_t*)0x41;
 static volatile uint8_t* const EEARH_addr = (volatile uint8_t*)0x42;
 
@@ -124,19 +133,32 @@ void loadPassword() {
   PASSWORD[PW_LEN] = '\0';
 }
 
-// SERVO
+// ==========================================
+// SERVO DRIVER & STALL DETECTION
+// ==========================================
 
 static const int SERVO_PIN = 9;
+static const int SENSE_PIN = A1;
 
-static const unsigned long PERIOD_US = 20000;
-static const unsigned long PULSE_MIN_US = 500;
-static const unsigned long PULSE_MAX_US = 2400;
-static const unsigned long MOVE_TIME_MS = 500;
+static const unsigned long PERIOD_US    = 20000;
+static const unsigned long PULSE_MIN_US  = 500;
+static const unsigned long PULSE_MAX_US  = 2500;
+static const unsigned long MOVE_TIME_MS  = 500;
 
-static unsigned long pulseWidth = 1500;
-static bool servoEnabled = false;
-static unsigned long startTime = 0;
+static const int STALL_THRESHOLD = 30;
+
+static unsigned long pulseWidth   = 1500;
+static bool          servoEnabled = false;
+static unsigned long startTime    = 0;
 static unsigned long moveStart_ms = 0;
+
+static int  targetAngle = SERVO_LOCKED_ANGLE;
+static int  prevAngle   = SERVO_LOCKED_ANGLE;
+static bool reverting   = false;
+static bool blocked     = false;
+
+static unsigned long lastSense_ms = 0;
+static int  curReading = 0;
 
 static void setAngle(int angle) {
   angle = constrain(angle, 0, 180);
@@ -155,32 +177,117 @@ static void servoOFF() {
 }
 
 void servoMoveTo(int angle) {
+  if (!reverting) {
+    prevAngle = targetAngle;
+    blocked   = false;
+  }
+  targetAngle = angle;
   setAngle(angle);
   servoON();
   moveStart_ms = millis();
+  lastSense_ms = millis();
 }
 
-bool servoBusy() {
-  return servoEnabled;
-}
+bool servoBusy()    { return servoEnabled; }
+bool servoBlocked() { bool b = blocked; blocked = false; return b; }
 
 void servoUpdate() {
   if (!servoEnabled) return;
 
-  if (millis() - moveStart_ms >= MOVE_TIME_MS) {
+  unsigned long moveElapsed = millis() - moveStart_ms;
+
+  if (millis() - lastSense_ms >= 20) {
+    curReading = analogRead(SENSE_PIN);
+    lastSense_ms = millis();
+  }
+
+  if (moveElapsed >= MOVE_TIME_MS) {
+    if (!reverting && curReading >= STALL_THRESHOLD) {
+      Serial.print("  end-of-move current = "); Serial.print(curReading);
+      Serial.println("  >= 30  -> STALL detected, reverting");
+      blocked   = true;
+      reverting = true;
+      servoMoveTo(prevAngle);
+      return;
+    }
+    if (!reverting) {
+      Serial.print("  end-of-move current = "); Serial.print(curReading);
+      Serial.println("  < 30  -> move OK");
+    }
     servoOFF();
+    reverting = false;
     return;
   }
 
+  // Software PWM Pulse
   unsigned long elapsedTime = micros() - startTime;
+  if (elapsedTime >= pulseWidth) digitalWrite(SERVO_PIN, LOW);
+  else                           digitalWrite(SERVO_PIN, HIGH);
+  if (elapsedTime >= PERIOD_US)  startTime += PERIOD_US;
+}
 
-  if (elapsedTime >= pulseWidth) {
-    digitalWrite(SERVO_PIN, LOW);
-  } else {
-    digitalWrite(SERVO_PIN, HIGH);
+// ==========================================
+// LOW-POWER SLEEP IMPLEMENTATION
+// ==========================================
+
+#define ROW_MASK             (1 << 4)
+#define ADCSRA_MASK          (1 << 7)
+#define PCICR_MASK           (1 << 2)
+#define PCIFR_MASK           (1 << 2)
+
+static volatile uint8_t* const SMCR_addr   = (volatile uint8_t*)0x53;
+static volatile uint8_t* const ADCSRA_addr = (volatile uint8_t*)0x7A;
+static volatile uint8_t* const PCICR_addr  = (volatile uint8_t*)0x68;
+static volatile uint8_t* const PCMSK2_addr = (volatile uint8_t*)0x6D;
+static volatile uint8_t* const PCIFR_addr  = (volatile uint8_t*)0x3B;
+static volatile uint8_t* const PIND_addr   = (volatile uint8_t*)0x29;
+
+static void rowsAsGround() {
+  digitalWrite(4, LOW);
+  pinMode(4, OUTPUT);
+}
+
+static void rowsAsWake() { 
+  pinMode(4, INPUT); 
+}
+
+void initSleep() {
+  rowsAsGround();
+}
+
+void enterSleep() {
+  Serial.flush();
+  rowsAsWake();
+
+  for (volatile int i = 0; i < 50; i++) {}
+
+  *ADCSRA_addr &= ~ADCSRA_MASK; 
+  *PCMSK2_addr |= ROW_MASK;
+  *PCICR_addr |= PCICR_MASK;
+  *PCIFR_addr = PCIFR_MASK;
+
+  if (!(*PIND_addr & ROW_MASK)) {
+    *SMCR_addr = 0x04 | 0x01; // Power-down mode + Sleep Enable
+
+    uint8_t t;
+    asm volatile(
+      "in %0, 0x35 \n\t"
+      "ori %0, 0x60 \n\t"
+      "out 0x35, %0 \n\t"
+      "andi %0, 0xDF \n\t"
+      "out 0x35, %0 \n\t"
+      "sleep \n\t"
+      : "=&d"(t));
+
+    *SMCR_addr &= ~0x01;
   }
 
-  if (elapsedTime >= PERIOD_US) {
-    startTime += PERIOD_US;
-  }
+  *PCMSK2_addr &= ~ROW_MASK;
+  *PCIFR_addr = PCIFR_MASK;
+  rowsAsGround();
+  *ADCSRA_addr |= ADCSRA_MASK;
+}
+
+ISR(PCINT2_vect) {
+  // Pin Change Interrupt to wake CPU
 }

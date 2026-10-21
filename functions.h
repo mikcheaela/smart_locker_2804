@@ -15,7 +15,7 @@ extern State state;
 void resetEntry();
 bool codeMatches();
 
-// PIN
+// PIN & EEPROM
 extern char PASSWORD[PW_LEN + 1];
 
 bool checkPassword();
@@ -23,8 +23,14 @@ void savePassword(char* newPassword);
 void loadPassword();
 
 // SERVO
-const int SERVO_LOCKED_ANGLE   = 0;
-const int SERVO_UNLOCKED_ANGLE = 90;
+const int SERVO_LOCKED_ANGLE   = 28;
+const int SERVO_UNLOCKED_ANGLE = 120;
+
 void servoMoveTo(int angle);
 void servoUpdate();
+bool servoBlocked();
 bool servoBusy();
+
+// SLEEP
+void initSleep();
+void enterSleep();
