@@ -34,3 +34,7 @@ bool servoBusy();
 // SLEEP
 void initSleep();
 void enterSleep();
+
+// BATTERY
+bool batteryLow();
+void batteryAlert();
