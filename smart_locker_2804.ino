@@ -3,12 +3,15 @@
 static unsigned long lastActivity = 0;
 static const unsigned long SLEEP_TIMEOUT_MS = 5000;
 static State prevState = LOCKED;
+static bool servoWasBusy = false;
 
 void setup() {
   pinMode(9, OUTPUT);
   digitalWrite(9, LOW);
+  pinMode(BATTERY_SW, OUTPUT);
+  digitalWrite(BATTERY_SW, LOW);
   Serial.begin(9600);
-  
+
   initSleep();
   resetEntry();
 
@@ -33,6 +36,13 @@ void loop() {
     return;
   }
 
+  if (servoWasBusy) {
+    servoWasBusy = false;
+    batteryStart();
+  }
+
+  batteryUpdate();
+
   // Handle Motor Stalling Exception
   if (servoBlocked()) {
     state = prevState;
@@ -56,6 +66,7 @@ void loop() {
 
       Serial.println("\nAwake");
       lastActivity = millis();
+      batteryStart();
     }
     return;
   }
