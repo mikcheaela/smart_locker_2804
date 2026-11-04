@@ -291,3 +291,48 @@ void enterSleep() {
 ISR(PCINT2_vect) {
   // Pin Change Interrupt to wake CPU
 }
+
+// ==========================================
+// BATTERY INDICATOR IMPLEMENTATION
+// ==========================================
+
+#define BATTERY_PIN A2
+#define BATTERY_SW 7
+#define RECOVER 737
+#define LOW_ADC 716
+
+static bool lowFlag = false;
+static unsigned long measuringStart = 0;
+
+void batteryStart() {
+  digitalWrite(BATTERY_SW, HIGH);   // divider ON
+  measuringStart = millis();
+}
+
+static int readBattery() {
+  if (millis() - batmeasuringStartStart < 10) return;
+  
+  digitalWrite(BATTERY_SW, HIGH); // divider ON
+  long sum = 0;
+  for (int i = 0; i < 8; i++){
+    sum += analogRead(BATTERY_PIN);
+  }
+  
+  digitalWrite(BATTERY_SW, LOW); // divider OFF
+  return sum / 8;
+}
+
+bool batteryLow() {
+  int r = readBattery();
+  if (!lowFlag && r < LOW_ADC){
+    lowFlag = true;
+  }
+  if (lowFlag && r > RECOVER){
+    lowFlag = false;
+  }
+  return lowFlag;
+}
+
+void batteryAlert() {
+  Serial.println("LOW BATTERY");
+}
