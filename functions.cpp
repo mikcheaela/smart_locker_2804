@@ -302,37 +302,37 @@ ISR(PCINT2_vect) {
 #define LOW_ADC 716
 
 static bool lowFlag = false;
+static bool measuring = false;
 static unsigned long measuringStart = 0;
 
 void batteryStart() {
-  digitalWrite(BATTERY_SW, HIGH);   // divider ON
+  digitalWrite(BATTERY_SW, HIGH); // divider ON
   measuringStart = millis();
+  measuring = true;
 }
 
-static int readBattery() {
-  if (millis() - batmeasuringStartStart < 10) return;
-  
-  digitalWrite(BATTERY_SW, HIGH); // divider ON
+void batteryUpdate() {
+  if (!measuring) return;
+  if (millis() - measuringStart < 10) return;
+
   long sum = 0;
-  for (int i = 0; i < 8; i++){
+  for (int i = 0; i < 8; i++) {
     sum += analogRead(BATTERY_PIN);
   }
-  
   digitalWrite(BATTERY_SW, LOW); // divider OFF
-  return sum / 8;
-}
+  measuring = false;
 
-bool batteryLow() {
-  int r = readBattery();
-  if (!lowFlag && r < LOW_ADC){
+  int r = sum / 8;
+  
+  if (!lowFlag && r < LOW_ADC) {
     lowFlag = true;
   }
-  if (lowFlag && r > RECOVER){
+  
+  if (lowFlag && r > RECOVER) {
     lowFlag = false;
   }
-  return lowFlag;
-}
-
-void batteryAlert() {
-  Serial.println("LOW BATTERY");
+  
+  if (lowFlag) {
+    batteryAlert();
+  }
 }
