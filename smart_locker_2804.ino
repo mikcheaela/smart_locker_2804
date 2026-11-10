@@ -8,7 +8,8 @@ void setup() {
   pinMode(9, OUTPUT);
   digitalWrite(9, LOW);
   Serial.begin(9600);
-  
+
+  uiInit();
   initSleep();
   resetEntry();
 
@@ -22,12 +23,13 @@ void setup() {
     Serial.println("\nNo PIN saved.\nEnter a 4-digit PIN.\nPress * to clear input and # to confirm.\n");
   }
 
+  showStateLEDs();
   lastActivity = millis();
 }
 
 void loop() {
   servoUpdate();
-  
+
   if (servoBusy()) {
     lastActivity = millis();
     return;
@@ -37,6 +39,7 @@ void loop() {
   if (servoBlocked()) {
     state = prevState;
     resetEntry();
+    showStateLEDs();
     Serial.println("\nMOTOR BLOCKED - reverted to previous state");
     if (state == LOCKED)        Serial.println("LOCKED.\nEnter PIN:");
     else if (state == UNLOCKED) Serial.println("UNLOCKED");
@@ -50,16 +53,18 @@ void loop() {
     if (state != SETUP && (millis() - lastActivity) >= SLEEP_TIMEOUT_MS) {
       resetEntry();
       Serial.println("\nSleeping");
+      uiOff();
       enterSleep();
 
       delay(20);
 
       Serial.println("\nAwake");
+      showStateLEDs();
       lastActivity = millis();
     }
     return;
   }
-  
+
   lastActivity = millis();
 
   switch (state) {
@@ -77,6 +82,8 @@ void loop() {
           prevState = state;
           state = LOCKED;
           servoMoveTo(SERVO_LOCKED_ANGLE);
+          beepCorrect();
+          showStateLEDs();
           Serial.println("\nPIN saved!\nLOCKED.\nEnter PIN:");
           resetEntry();
         }
@@ -99,10 +106,13 @@ void loop() {
           prevState = state;
           state = UNLOCKED;
           servoMoveTo(SERVO_UNLOCKED_ANGLE);
+          beepCorrect();
+          showStateLEDs();
           Serial.println("\nUNLOCKED");
           resetEntry();
         } else {
           Serial.println("\nWRONG");
+          showWrong();
           resetEntry();
         }
       } else if (entryPos < PW_LEN) {
@@ -118,6 +128,7 @@ void loop() {
         prevState = state;
         state = LOCKED;
         servoMoveTo(SERVO_LOCKED_ANGLE);
+        showStateLEDs();
         resetEntry();
         Serial.println("\nLOCKED.\nEnter PIN:");
       }

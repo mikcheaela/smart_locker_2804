@@ -21,7 +21,7 @@ static int  sameCount = 0;
 static Key keys[] = {
   {3, '1'}, {185, '4'}, {328, '7'}, {512, '*'},
   {615, '2'}, {648, '5'}, {681, '8'}, {732, '0'},
-  {786, '3'}, {798, '6'}, {810, '9'}, {832, '#'}
+  {791, '3'}, {802, '6'}, {813, '9'}, {832, '#'}
 };
 
 static char decodeKey(int reading) {
@@ -38,14 +38,18 @@ static char decodeKey(int reading) {
   return best;
 }
 
-static int readAveraged() {
-  long sum = 0;
-  for (int i = 0; i < 8; i++) sum += analogRead(KEYPAD_PIN);
-  return sum / 8;
+static int readKeypad() {
+  const int N = 31;
+  int s[N];
+  for (int i = 0; i < N; i++) { s[i] = analogRead(KEYPAD_PIN); delayMicroseconds(150); }
+  for (int i = 0; i < N; i++)
+    for (int j = i + 1; j < N; j++)
+      if (s[j] < s[i]) { int t = s[i]; s[i] = s[j]; s[j] = t; }
+  return s[N / 2];
 }
 
 char getKey() {
-  char now = decodeKey(readAveraged());
+  char now = decodeKey(readKeypad());   // was readAveraged()
   if (now == candidate) {
     if (sameCount < CONFIRM) sameCount++;
   } else {
@@ -290,4 +294,70 @@ void enterSleep() {
 
 ISR(PCINT2_vect) {
   // Pin Change Interrupt to wake CPU
+}
+
+// ==========================================
+// LED + BUZZER (User Interface)
+// ==========================================
+
+static const int LED_YELLOW = A2;  // waiting for a code
+static const int LED_GREEN  = A3;  // unlocked
+static const int LED_RED    = A4;  // wrong entry
+static const int BUZZER     = A5;
+
+void uiInit() {
+  pinMode(LED_YELLOW, OUTPUT);
+  pinMode(LED_GREEN,  OUTPUT);
+  pinMode(LED_RED,    OUTPUT);
+  pinMode(BUZZER,     OUTPUT);
+  digitalWrite(LED_YELLOW, LOW);
+  digitalWrite(LED_GREEN,  LOW);
+  digitalWrite(LED_RED,    LOW);
+  digitalWrite(BUZZER,     LOW);
+}
+
+// Set the status LEDs from the current state.
+void showStateLEDs() {
+  digitalWrite(LED_RED, LOW);
+  if (state == UNLOCKED) {
+    digitalWrite(LED_GREEN,  HIGH);
+    digitalWrite(LED_YELLOW, LOW);
+  } else {                      // SETUP or LOCKED = waiting for a code
+    digitalWrite(LED_GREEN,  LOW);
+    digitalWrite(LED_YELLOW, HIGH);
+  }
+}
+
+//right PIN, high beep
+void beepCorrect() {
+  tone(BUZZER, 2000, 150);
+}
+
+//wrong pin, womp womp
+static void beepWrong() {
+  tone(BUZZER, 800, 180);
+  delay(200);
+  tone(BUZZER, 500, 260);
+  delay(280);
+  noTone(BUZZER);
+  digitalWrite(BUZZER, LOW);
+}
+
+// Red flash + womp-womp, then restore the state LEDs.
+void showWrong() {
+  digitalWrite(LED_YELLOW, LOW);
+  digitalWrite(LED_GREEN,  LOW);
+  digitalWrite(LED_RED,    HIGH);
+  beepWrong();                  // red stays lit during the womp
+  digitalWrite(LED_RED, LOW);
+  showStateLEDs();              // back to yellow
+}
+
+// Everything off before sleep.
+void uiOff() {
+  digitalWrite(LED_YELLOW, LOW);
+  digitalWrite(LED_GREEN,  LOW);
+  digitalWrite(LED_RED,    LOW);
+  noTone(BUZZER);
+  digitalWrite(BUZZER, LOW);
 }

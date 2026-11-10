@@ -34,3 +34,10 @@ bool servoBusy();
 // SLEEP
 void initSleep();
 void enterSleep();
+
+// LED + BUZZER (User Interface)
+void uiInit();
+void showStateLEDs();
+void beepCorrect();
+void showWrong();
+void uiOff();
