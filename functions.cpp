@@ -300,10 +300,10 @@ ISR(PCINT2_vect) {
 // LED + BUZZER (User Interface)
 // ==========================================
 
-static const int LED_YELLOW = A2;  // waiting for a code
-static const int LED_GREEN  = A3;  // unlocked
-static const int LED_RED    = A4;  // wrong entry
-static const int BUZZER     = A5;
+static const int LED_YELLOW = 5;   // D5, pin 11
+static const int LED_GREEN  = 6;   // D6, pin 12
+static const int LED_RED    = 7;   // D7, pin 13
+static const int BUZZER     = 8;   // D8, pin 14
 
 void uiInit() {
   pinMode(LED_YELLOW, OUTPUT);
