@@ -30,9 +30,9 @@ static char decodeKey(int reading) {
   int  bestDist = 2000;
   for (int i = 0; i < NUM_KEYS; i++) {
     int dist = abs(reading - keys[i].value);
-    if (dist < bestDist) { 
-      bestDist = dist; 
-      best = keys[i].label; 
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = keys[i].label;
     }
   }
   return best;
@@ -49,7 +49,7 @@ static int readKeypad() {
 }
 
 char getKey() {
-  char now = decodeKey(readKeypad());   // was readAveraged()
+  char now = decodeKey(readKeypad());
   if (now == candidate) {
     if (sameCount < CONFIRM) sameCount++;
   } else {
@@ -67,10 +67,13 @@ char getKey() {
 // STATE MACHINE DATA & HELPERS
 // ==========================================
 
-char  PASSWORD[PW_LEN + 1];
 char  entry[PW_LEN + 1];
 int   entryPos = 0;
 State state;
+
+static uint8_t  salt[4];        // random per-device salt
+static uint32_t storedHash;     // hash of the saved PIN
+static uint32_t hashPin(const char* pin);   // defined in EEPROM section
 
 void resetEntry() {
   entryPos = 0;
@@ -79,14 +82,11 @@ void resetEntry() {
 
 bool codeMatches() {
   if (entryPos != PW_LEN) return false;
-  for (int i = 0; i < PW_LEN; i++) {
-    if (entry[i] != PASSWORD[i]) return false;
-  }
-  return true;
+  return hashPin(entry) == storedHash;   // compare hashes, not the PIN
 }
 
 // ==========================================
-// DIRECT EEPROM REGISTER FUNCTIONS
+// DIRECT EEPROM REGISTER FUNCTIONS (hashed password)
 // ==========================================
 
 #define ReadEnable (1 << 0)
@@ -99,8 +99,9 @@ static volatile uint8_t* const EEARL_addr = (volatile uint8_t*)0x41;
 static volatile uint8_t* const EEARH_addr = (volatile uint8_t*)0x42;
 
 static const uint16_t FLAG_ADDR = 0;
-static const uint16_t PW_START_ADDR = 1;
-static const uint8_t FLAG = 0x00;
+static const uint16_t SALT_ADDR = 1;   // 4 bytes
+static const uint16_t HASH_ADDR = 5;   // 4 bytes
+static const uint8_t  FLAG = 0x00;
 
 static uint8_t readByte(uint16_t addr) {
   while (*EECR_addr & WriteEnable) {}
@@ -119,22 +120,45 @@ static void writeByte(uint16_t addr, uint8_t data) {
   *EECR_addr |= WriteEnable;
 }
 
+// Salted, stretched FNV-1a hash. The PIN itself is never stored.
+static uint32_t hashPin(const char* pin) {
+  uint32_t h = 2166136261UL;                 // FNV offset basis
+  for (int i = 0; i < 4; i++) {              // mix in salt
+    h ^= salt[i];
+    h *= 16777619UL;                         // FNV prime
+  }
+  for (int i = 0; i < PW_LEN; i++) {         // mix in PIN
+    h ^= (uint8_t)pin[i];
+    h *= 16777619UL;
+  }
+  for (uint16_t n = 0; n < 1000; n++) {      // stretch: slow brute force
+    h ^= (h >> 13);
+    h *= 16777619UL;
+  }
+  return h;
+}
+
 bool checkPassword() {
-  return readByte(FLAG_ADDR) == FLAG;
+  return readByte(FLAG_ADDR) == FLAG;        // is a credential saved?
 }
 
 void savePassword(char* newPassword) {
-  for (int i = 0; i < PW_LEN; ++i) {
-    writeByte(PW_START_ADDR + i, (uint8_t)newPassword[i]);
+  uint32_t seed = micros();                  // lightweight entropy for the salt
+  if (seed == 0) seed = 1;
+  for (int i = 0; i < 4; i++) {
+    seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;   // xorshift
+    salt[i] = (uint8_t)seed;
   }
+  storedHash = hashPin(newPassword);
+  for (int i = 0; i < 4; i++) writeByte(SALT_ADDR + i, salt[i]);
+  for (int i = 0; i < 4; i++) writeByte(HASH_ADDR + i, (uint8_t)(storedHash >> (8 * i)));
   writeByte(FLAG_ADDR, FLAG);
 }
 
 void loadPassword() {
-  for (int i = 0; i < PW_LEN; ++i) {
-    PASSWORD[i] = (char)readByte(PW_START_ADDR + i);
-  }
-  PASSWORD[PW_LEN] = '\0';
+  for (int i = 0; i < 4; i++) salt[i] = readByte(SALT_ADDR + i);
+  storedHash = 0;
+  for (int i = 0; i < 4; i++) storedHash |= ((uint32_t)readByte(HASH_ADDR + i)) << (8 * i);
 }
 
 // ==========================================
@@ -223,7 +247,6 @@ void servoUpdate() {
     return;
   }
 
-  // Software PWM Pulse
   unsigned long elapsedTime = micros() - startTime;
   if (elapsedTime >= pulseWidth) digitalWrite(SERVO_PIN, LOW);
   else                           digitalWrite(SERVO_PIN, HIGH);
@@ -251,8 +274,8 @@ static void rowsAsGround() {
   pinMode(4, OUTPUT);
 }
 
-static void rowsAsWake() { 
-  pinMode(4, INPUT); 
+static void rowsAsWake() {
+  pinMode(4, INPUT);
 }
 
 void initSleep() {
@@ -265,7 +288,7 @@ void enterSleep() {
 
   for (volatile int i = 0; i < 50; i++) {}
 
-  *ADCSRA_addr &= ~ADCSRA_MASK; 
+  *ADCSRA_addr &= ~ADCSRA_MASK;
   *PCMSK2_addr |= ROW_MASK;
   *PCICR_addr |= PCICR_MASK;
   *PCIFR_addr = PCIFR_MASK;
@@ -316,7 +339,6 @@ void uiInit() {
   digitalWrite(BUZZER,     LOW);
 }
 
-// Set the status LEDs from the current state.
 void showStateLEDs() {
   digitalWrite(LED_RED, LOW);
   if (state == UNLOCKED) {
@@ -328,13 +350,11 @@ void showStateLEDs() {
   }
 }
 
-//right PIN, high beep
-void beepCorrect() {
+void beepCorrect() {            // correct PIN, high beep
   tone(BUZZER, 2000, 150);
 }
 
-//wrong pin, womp womp
-static void beepWrong() {
+static void beepWrong() {       // wrong PIN, womp-womp
   tone(BUZZER, 800, 180);
   delay(200);
   tone(BUZZER, 500, 260);
@@ -343,17 +363,15 @@ static void beepWrong() {
   digitalWrite(BUZZER, LOW);
 }
 
-// Red flash + womp-womp, then restore the state LEDs.
 void showWrong() {
   digitalWrite(LED_YELLOW, LOW);
   digitalWrite(LED_GREEN,  LOW);
   digitalWrite(LED_RED,    HIGH);
-  beepWrong();                  // red stays lit during the womp
+  beepWrong();
   digitalWrite(LED_RED, LOW);
-  showStateLEDs();              // back to yellow
+  showStateLEDs();
 }
 
-// Everything off before sleep.
 void uiOff() {
   digitalWrite(LED_YELLOW, LOW);
   digitalWrite(LED_GREEN,  LOW);
@@ -361,3 +379,57 @@ void uiOff() {
   noTone(BUZZER);
   digitalWrite(BUZZER, LOW);
 }
+
+// ==========================================
+// BATTERY INDICATOR
+// ==========================================
+
+static const int BATTERY_PIN = A2;   // divider read node
+static const int BATTERY_SW  = 13;   // D13
+static const int LOW_ADC = 716;
+static const int RECOVER = 737;
+
+static bool lowFlag = false;
+static bool measuring = false;
+static unsigned long measuringStart = 0;
+
+void batteryInit() {
+  pinMode(BATTERY_SW, OUTPUT);
+  digitalWrite(BATTERY_SW, LOW);       // divider off at rest
+}
+
+void batteryStart() {
+  digitalWrite(BATTERY_SW, HIGH);      // divider ON
+  measuringStart = millis();
+  measuring = true;
+}
+
+static void batteryAlert() {           // distinct low-battery signal
+  for (int i = 0; i < 2; i++) {
+    digitalWrite(LED_RED, HIGH);
+    tone(BUZZER, 400, 120);
+    delay(150);
+    digitalWrite(LED_RED, LOW);
+    delay(120);
+  }
+  noTone(BUZZER);
+  digitalWrite(BUZZER, LOW);
+  showStateLEDs();                     // restore normal LED
+}
+
+void batteryUpdate() {
+  if (!measuring) return;
+  if (millis() - measuringStart < 10) return;   // let the divider settle
+
+  long sum = 0;
+  for (int i = 0; i < 8; i++) sum += analogRead(BATTERY_PIN);
+  digitalWrite(BATTERY_SW, LOW);       // divider OFF (save power)
+  measuring = false;
+
+  int r = sum / 8;
+  if (!lowFlag && r < LOW_ADC) lowFlag = true;    // hysteresis
+  if (lowFlag && r > RECOVER)  lowFlag = false;
+  if (lowFlag) batteryAlert();
+}
+
+bool batteryLow() { return lowFlag; }

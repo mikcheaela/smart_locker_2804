@@ -15,9 +15,7 @@ extern State state;
 void resetEntry();
 bool codeMatches();
 
-// PIN & EEPROM
-extern char PASSWORD[PW_LEN + 1];
-
+// PIN & EEPROM (hashed)
 bool checkPassword();
 void savePassword(char* newPassword);
 void loadPassword();
@@ -41,3 +39,9 @@ void showStateLEDs();
 void beepCorrect();
 void showWrong();
 void uiOff();
+
+// BATTERY INDICATOR
+void batteryInit();
+void batteryStart();
+void batteryUpdate();
+bool batteryLow();

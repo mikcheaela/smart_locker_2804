@@ -3,6 +3,7 @@
 static unsigned long lastActivity = 0;
 static const unsigned long SLEEP_TIMEOUT_MS = 5000;
 static State prevState = LOCKED;
+static bool servoWasBusy = false;
 
 void setup() {
   pinMode(9, OUTPUT);
@@ -10,6 +11,7 @@ void setup() {
   Serial.begin(9600);
 
   uiInit();
+  batteryInit();
   initSleep();
   resetEntry();
 
@@ -31,9 +33,17 @@ void loop() {
   servoUpdate();
 
   if (servoBusy()) {
+    servoWasBusy = true;        // remember we were moving
     lastActivity = millis();
     return;
   }
+
+  if (servoWasBusy) {
+    servoWasBusy = false;
+    batteryStart();             // measure battery once, right after a servo move
+  }
+
+  batteryUpdate();
 
   // Handle Motor Stalling Exception
   if (servoBlocked()) {
@@ -61,6 +71,7 @@ void loop() {
       Serial.println("\nAwake");
       showStateLEDs();
       lastActivity = millis();
+      batteryStart();           // check battery on wake
     }
     return;
   }
@@ -77,8 +88,7 @@ void loop() {
         if (entryPos != PW_LEN) {
           Serial.println("\nInvalid PIN length.");
         } else {
-          strcpy(PASSWORD, entry);
-          savePassword(PASSWORD);
+          savePassword(entry);          // stores salt + hash, not the PIN
           prevState = state;
           state = LOCKED;
           servoMoveTo(SERVO_LOCKED_ANGLE);
