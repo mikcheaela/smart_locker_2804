@@ -297,7 +297,7 @@ ISR(PCINT2_vect) {
 // ==========================================
 
 #define BATTERY_PIN A2
-#define BATTERY_SW 7
+#define BATTERY_SW 13
 #define RECOVER 737
 #define LOW_ADC 716
 
