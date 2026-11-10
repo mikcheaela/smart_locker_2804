@@ -386,8 +386,8 @@ void uiOff() {
 
 static const int BATTERY_PIN = A2;   // divider read node
 static const int BATTERY_SW  = 13;   // D13
-static const int LOW_ADC = 716;
-static const int RECOVER = 737;
+static const int LOW_ADC = 802;
+static const int RECOVER = 822;
 
 static bool lowFlag = false;
 static bool measuring = false;
